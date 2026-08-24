@@ -1,9 +1,11 @@
 /**
- * Popup UI. Single-column with two slides (list ⇄ reader), like classic
- * Gmail checkers. Hand-rolled DOM, no framework.
+ * Popup UI — wide two-column layout:
+ *   [account rail] [merged inbox (all accounts, sequential sections)] ⇄ [reader]
+ * Hand-rolled DOM, no framework.
  */
 import { api } from "../shared/env";
 import { loadAccounts, loadSettings, saveSettings } from "../shared/storage";
+import { loadStates } from "../background/states";
 import { applyTheme } from "../shared/theme";
 import { t } from "../shared/i18n";
 import {
@@ -13,17 +15,27 @@ import {
   moveToTrash,
   readMail,
 } from "../shared/gmail";
-import type { AccountConfig, MessageSummary, Settings } from "../shared/types";
+import type { AccountConfig, MessageSummary, Settings, AccountState } from "../shared/types";
 import { startInteractiveAuth } from "../shared/auth";
+
+/** A list row: the Gmail summary tagged with the account it belongs to. */
+type Row = MessageSummary & { accountId: string };
+
+interface Group {
+  account: AccountConfig;
+  items: Row[];
+  loading: boolean;
+  error: string | null;
+}
 
 interface UiState {
   settings: Settings | null;
   accounts: AccountConfig[];
-  currentId: string | null;
-  items: MessageSummary[];
-  selected: MessageSummary | null;
+  states: Record<string, AccountState>;
+  groups: Group[];
+  selected: Row | null;
   body: Awaited<ReturnType<typeof readMail>> | null;
-  loadingList: boolean;
+  selectedAccountId: string | null;
   loadingBody: boolean;
   error: string | null;
   query: string;
@@ -33,11 +45,11 @@ interface UiState {
 const S: UiState = {
   settings: null,
   accounts: [],
-  currentId: null,
-  items: [],
+  states: {},
+  groups: [],
   selected: null,
   body: null,
-  loadingList: false,
+  selectedAccountId: null,
   loadingBody: false,
   error: null,
   query: "",
@@ -63,17 +75,32 @@ function iconButton(symbol: string, title: string, onClick: () => void): HTMLBut
   b.textContent = symbol;
   b.title = title;
   b.setAttribute("aria-label", title);
-  b.addEventListener("click", onClick);
+  b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    onClick();
+  });
   return b;
+}
+
+function initials(value: string): string {
+  const name = value.split("@")[0] ?? value;
+  return (name[0] ?? "?").toUpperCase();
+}
+
+function hueFor(value: string): number {
+  let sum = 0;
+  for (const ch of value) sum = (sum + ch.charCodeAt(0) * 31) % 360;
+  return sum;
 }
 
 function fmtDate(ms: number): string {
   const d = new Date(ms);
   const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "numeric", day: "numeric" });
+  if (d.toDateString() === now.toDateString())
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  if (d.getFullYear() === now.getFullYear())
+    return d.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+  return d.toLocaleDateString();
 }
 
 function gmailUrl(account: AccountConfig, view?: string): string {
@@ -85,21 +112,61 @@ function notifyBackground(type: string): void {
   void api.runtime.sendMessage({ type }).catch(() => undefined);
 }
 
+function accountById(id: string | null | undefined): AccountConfig | null {
+  return S.accounts.find((a) => a.id === id) ?? null;
+}
+
+function unreadTotal(accountId: string): number | undefined {
+  return S.states[accountId]?.unreadCount;
+}
+
 /* --------------------------------- boot ---------------------------------- */
 
 async function boot(): Promise<void> {
-  const [accounts, settings] = await Promise.all([loadAccounts(), loadSettings()]);
+  const [accounts, settings, states] = await Promise.all([loadAccounts(), loadSettings(), loadStates()]);
   S.accounts = accounts;
   S.settings = settings;
+  S.states = states;
+  S.groups = accounts.map((account) => ({ account, items: [], loading: true, error: null }));
   applyTheme(settings);
   buildSkeleton();
-  const last = settings.lastAccount ?? accounts[0]?.id ?? null;
-  if (last && accounts.some((a) => a.id === last)) {
-    await switchAccount(last);
-  } else if (accounts.length > 0) {
-    await switchAccount(accounts[0]!.id);
-  } else {
-    renderNoAccounts();
+
+  api.runtime.onMessage.addListener((msg: unknown) => {
+    if ((msg as any)?.type === "states-updated") {
+      void loadStates().then((st) => {
+        S.states = st;
+        updateCounts();
+      });
+    }
+    return undefined;
+  });
+
+  if (accounts.length === 0) renderNoAccounts();
+  else void loadAll();
+}
+
+async function loadAll(): Promise<void> {
+  await Promise.all(S.groups.map((g) => loadGroup(g, true)));
+}
+
+async function loadGroup(group: Group, showLoading: boolean): Promise<void> {
+  if (showLoading) {
+    group.loading = true;
+    renderSections();
+  }
+  group.error = null;
+  const q = [S.query || undefined, S.unreadOnly ? "is:unread" : undefined].filter(Boolean).join(" ") || undefined;
+  try {
+    const page = await listSummaries(group.account, {
+      maxResults: S.settings?.pageSize ?? 25,
+      q,
+    });
+    group.items = page.items.map((m) => ({ ...m, accountId: group.account.id }));
+  } catch (e) {
+    group.error = e instanceof Error ? e.message : String(e);
+  } finally {
+    group.loading = false;
+    renderSections();
   }
 }
 
@@ -107,144 +174,133 @@ async function boot(): Promise<void> {
 
 let listPane: HTMLElement;
 let readerPane: HTMLElement;
-let accountSelect: HTMLSelectElement;
 
 function buildSkeleton(): void {
   document.title = "easy-mail-checker";
 
   const header = el("header", "topbar");
-
-  accountSelect = el("select", "account-select") as HTMLSelectElement;
-  accountSelect.addEventListener("change", () => void switchAccount(accountSelect.value));
-  rebuildAccountOptions();
+  header.append(el("span", "brand", "✉ easy-mail-checker"));
 
   const addBtn = iconButton("+", t("addAccount"), () => void addAccount());
-  addBtn.classList.add("accent-btn");
-
-  const refreshBtn = iconButton("⟳", t("refresh"), () => void loadList(true));
   const composeBtn = iconButton("✎", t("compose"), () => {
-    const acc = currentAccount();
-    if (acc) window.open(gmailUrl(acc, "view=cm"), "_blank");
+    const first = S.accounts[0];
+    if (first) window.open(gmailUrl(first, "view=cm"), "_blank");
   });
-
+  const refreshBtn = iconButton("⟳", t("refresh"), () => void loadAll());
   const themeBtn = iconButton("◐", t("theme"), () => void cycleTheme());
   const gearBtn = iconButton("⚙", t("settings"), () => api.runtime.openOptionsPage());
-
-  header.append(accountSelect, addBtn, composeBtn, refreshBtn, themeBtn, gearBtn);
+  header.append(addBtn, composeBtn, refreshBtn, themeBtn, gearBtn);
 
   const searchBar = el("div", "searchbar");
   const input = el("input", "search-input") as HTMLInputElement;
   input.type = "search";
-  input.placeholder = t("search");
+  input.placeholder = `${t("search")} (${t("inbox")})`;
   input.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
       S.query = input.value.trim();
-      S.unreadOnly = false;
-      void loadList(true);
+      void loadAll();
     }
   });
   const unreadBtn = iconButton("◉", t("inbox"), () => {
     S.unreadOnly = !S.unreadOnly;
     unreadBtn.classList.toggle("active", S.unreadOnly);
-    void loadList(true);
+    void loadAll();
   });
   searchBar.append(input, unreadBtn);
 
+  const side = el("nav", "side");
+  const maincol = el("div", "maincol");
   listPane = el("main", "pane list-pane");
   readerPane = el("main", "pane reader-pane");
+  maincol.append(listPane, readerPane);
+
+  const content = el("div", "content");
+  content.append(side, maincol);
 
   const root = el("div", "app");
-  root.append(header, searchBar, listPane, readerPane);
+  root.append(header, searchBar, content);
   document.body.replaceChildren(root);
+  renderSidebar();
 }
 
-function rebuildAccountOptions(): void {
-  accountSelect.replaceChildren();
-  for (const acc of S.accounts) {
-    const opt = el("option", undefined, acc.label || acc.email) as HTMLOptionElement;
-    opt.value = acc.id;
-    accountSelect.append(opt);
+function sideEl(): HTMLElement {
+  return document.querySelector(".side") as HTMLElement;
+}
+
+/* ------------------------------- sidebar --------------------------------- */
+
+function renderSidebar(): void {
+  const side = sideEl();
+  side.replaceChildren();
+  for (const account of S.accounts) {
+    const btn = el("button", "side-btn");
+    btn.type = "button";
+    btn.title = account.email;
+    const avatar = el("span", "avatar", initials(account.label || account.email));
+    avatar.style.background = `hsl(${hueFor(account.email)} 55% 45%)`;
+    btn.append(avatar);
+    const n = unreadTotal(account.id);
+    if (n && n > 0) btn.append(el("span", "badge", n > 99 ? "99+" : String(n)));
+    btn.addEventListener("click", () =>
+      document.querySelector(`[data-acct="${account.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+    side.append(btn);
   }
-  if (S.currentId) accountSelect.value = S.currentId;
 }
 
-function currentAccount(): AccountConfig | null {
-  return S.accounts.find((a) => a.id === S.currentId) ?? null;
+/** Update just the numbers (sidebar badges + section counters) without rebuilding lists. */
+function updateCounts(): void {
+  renderSidebar();
+  for (const group of S.groups) {
+    const span = document.querySelector(`.acct-count[data-acct="${group.account.id}"]`);
+    if (span) span.textContent = countLabel(group);
+  }
 }
 
-/* ------------------------------ data actions ------------------------------ */
+function countLabel(group: Group): string {
+  const n = unreadTotal(group.account.id);
+  return n !== undefined ? String(n) : String(group.items.length);
+}
+
+/* ------------------------------ data actions ----------------------------- */
 
 async function addAccount(): Promise<void> {
-  const btn = document.querySelector(".onboard .accent-btn") as HTMLButtonElement | null;
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = t("authInProgress");
-  }
   try {
     const account = await startInteractiveAuth();
-    if (!S.accounts.some((a) => a.id === account.id)) S.accounts.push(account);
-    S.settings && (await saveSettings({ ...S.settings, lastAccount: account.id }));
-    await switchAccount(account.id);
+    if (!S.accounts.some((a) => a.id === account.id)) {
+      S.accounts.push(account);
+      const group: Group = { account, items: [], loading: true, error: null };
+      S.groups.push(group);
+      renderSidebar();
+      renderSections();
+      await loadGroup(group, false);
+    }
+    if (S.settings) {
+      S.settings.lastAccount = account.id;
+      void saveSettings(S.settings);
+    }
   } catch (e) {
     showError(`${t("authError")}: ${e instanceof Error ? e.message : String(e)}`);
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = t("signInWithGoogle");
-    }
   }
 }
 
-async function switchAccount(id: string): Promise<void> {
-  S.currentId = id;
-  S.selected = null;
-  S.body = null;
-  hideReader();
-  rebuildAccountOptions();
-  if (S.settings) {
-    S.settings.lastAccount = id;
-    void saveSettings(S.settings);
-  }
-  await loadList(true);
-}
-
-async function loadList(showLoading: boolean): Promise<void> {
-  const acc = currentAccount();
-  if (!acc) return;
-  if (showLoading) {
-    S.loadingList = true;
-    renderList();
-  }
-  S.error = null;
-  try {
-    const q = [S.query || undefined, S.unreadOnly ? "is:unread" : undefined].filter(Boolean).join(" ") || undefined;
-    const page = await listSummaries(acc, { maxResults: S.settings?.pageSize ?? 25, q });
-    S.items = page.items;
-  } catch (e) {
-    S.error = e instanceof Error ? e.message : String(e);
-  } finally {
-    S.loadingList = false;
-    renderList();
-    notifyBackground("refresh");
-  }
-}
-
-async function openMessage(id: string): Promise<void> {
-  const acc = currentAccount();
+async function openMessage(row: Row): Promise<void> {
+  const acc = accountById(row.accountId);
   if (!acc) return;
   S.loadingBody = true;
   S.error = null;
+  S.selected = row;
+  S.selectedAccountId = acc.id;
   showReader();
   renderReader();
   try {
-    const mail = await readMail(acc, id);
+    const mail = await readMail(acc, row.id);
     S.body = mail;
-    S.selected = mail.summary;
     renderReader();
     if (mail.summary.unread) {
-      await markRead(acc, [id], true);
-      const local = S.items.find((i) => i.id === id);
-      if (local) local.unread = false;
-      renderList();
+      await markRead(acc, [row.id], true);
+      row.unread = false;
+      renderSections();
       notifyBackground("refresh");
     }
   } catch (e) {
@@ -255,39 +311,42 @@ async function openMessage(id: string): Promise<void> {
   }
 }
 
-async function toggleRead(item: MessageSummary): Promise<void> {
-  const acc = currentAccount();
+async function toggleRead(row: Row): Promise<void> {
+  const acc = accountById(row.accountId);
   if (!acc) return;
-  await markRead(acc, [item.id], item.unread);
-  item.unread = !item.unread;
-  renderList();
+  await markRead(acc, [row.id], row.unread);
+  row.unread = !row.unread;
+  renderSections();
   notifyBackground("refresh");
 }
 
-async function trashItem(item: MessageSummary): Promise<void> {
-  const acc = currentAccount();
+async function trashRow(row: Row): Promise<void> {
+  const acc = accountById(row.accountId);
   if (!acc) return;
-  await moveToTrash(acc, [item.id]);
-  S.items = S.items.filter((i) => i.id !== item.id);
-  if (S.selected?.id === item.id) {
-    S.selected = null;
-    S.body = null;
-    hideReader();
-  }
-  renderList();
+  await moveToTrash(acc, [row.id]);
+  removeRow(row);
   notifyBackground("refresh");
 }
 
-async function archiveSelected(): Promise<void> {
-  const acc = currentAccount();
-  if (!acc || !S.selected) return;
-  await archiveMessages(acc, [S.selected.id]);
-  S.items = S.items.filter((i) => i.id !== S.selected!.id);
+async function archiveRow(row: Row): Promise<void> {
+  const acc = accountById(row.accountId);
+  if (!acc) return;
+  await archiveMessages(acc, [row.id]);
+  removeRow(row);
+  notifyBackground("refresh");
+}
+
+function removeRow(row: Row): void {
+  const group = S.groups.find((g) => g.account.id === row.accountId);
+  if (group) group.items = group.items.filter((i) => i.id !== row.id);
+  if (S.selected?.id === row.id) closeReader();
+  renderSections();
+}
+
+function closeReader(): void {
   S.selected = null;
   S.body = null;
   hideReader();
-  renderList();
-  notifyBackground("refresh");
 }
 
 async function cycleTheme(): Promise<void> {
@@ -303,7 +362,7 @@ async function cycleTheme(): Promise<void> {
 
 function showError(message: string): void {
   S.error = message;
-  renderList();
+  listPane?.replaceChildren(el("div", "error-box", message));
 }
 
 function renderNoAccounts(): void {
@@ -311,7 +370,7 @@ function renderNoAccounts(): void {
   box.append(el("div", "onboard-logo", "✉"));
   box.append(el("h1", "onboard-title", "easy-mail-checker"));
   box.append(el("p", "muted tagline", t("tagline")));
-  const btn = el("button", "accent-btn big", t("addAccount"));
+  const btn = el("button", "accent-btn big");
   btn.textContent = t("signInWithGoogle");
   btn.addEventListener("click", () => void addAccount());
   const gear = el("button", "link-btn", t("openSettings"));
@@ -321,54 +380,80 @@ function renderNoAccounts(): void {
   listPane.replaceChildren(box);
 }
 
-function renderList(): void {
-  if (S.loadingList) {
-    listPane.replaceChildren(el("div", "empty", t("loading")));
-    return;
+function renderSections(): void {
+  const scroller = listPane;
+  const keep = scroller.scrollTop;
+  const frag = document.createDocumentFragment();
+  for (const group of S.groups) frag.append(renderGroupSection(group));
+  listPane.replaceChildren(frag);
+  // re-render happens on every group load; avoid jumping the viewport
+  if (!document.querySelector(".app")?.classList.contains("reader-open")) {
+    scroller.scrollTop = keep;
   }
-  if (S.error && S.items.length === 0) {
-    const box = el("div", "error-box", `${t("loadError")}: ${S.error}`);
-    // Scope/permission failures need a fresh interactive consent — offer it inline.
-    if (/403|insufficient|PERMISSION_DENIED/i.test(S.error)) {
-      const retry = el("button", "accent-btn big", t("reauthNeeded"));
+}
+
+function renderGroupSection(group: Group): HTMLElement {
+  const section = el("section", "acct-section");
+  section.dataset.acct = group.account.id;
+
+  const head = el("header", "acct-head");
+  const avatar = el("span", "avatar sm", initials(group.account.label || group.account.email));
+  avatar.style.background = `hsl(${hueFor(group.account.email)} 55% 45%)`;
+  const title = el("span", "acct-name", group.account.label || group.account.email);
+  const count = el("span", "acct-count");
+  count.dataset.acct = group.account.id;
+  count.textContent = countLabel(group);
+  const open = iconButton("↗", t("openInGmail"), () => window.open(gmailUrl(group.account), "_blank"));
+  head.append(avatar, title, count, open);
+  section.append(head);
+
+  if (group.loading) {
+    section.append(el("div", "empty slim", t("loading")));
+    return section;
+  }
+
+  if (group.error) {
+    const box = el("div", "error-box slim", `${t("loadError")}: ${group.error}`);
+    if (/403|insufficient|PERMISSION_DENIED/i.test(group.error)) {
+      const retry = el("button", "accent-btn", t("reauthNeeded"));
       retry.type = "button";
       retry.addEventListener("click", () => void addAccount());
       box.append(el("div"), retry);
     }
-    listPane.replaceChildren(box);
-    return;
+    section.append(box);
+    return section;
   }
-  if (S.items.length === 0) {
-    listPane.replaceChildren(el("div", "empty", t("noMail")));
-    return;
+
+  if (group.items.length === 0) {
+    section.append(el("div", "empty slim", t("noMail")));
+    return section;
   }
+
   const ul = el("ul", "mail-list");
-  for (const item of S.items) {
-    ul.append(renderRow(item));
-  }
-  listPane.replaceChildren(ul);
+  for (const row of group.items) ul.append(renderRow(row));
+  section.append(ul);
+  return section;
 }
 
-function renderRow(item: MessageSummary): HTMLLIElement {
-  const li = el("li", item.unread ? "mail-row unread" : "mail-row");
+function renderRow(row: Row): HTMLLIElement {
+  const li = el("li", row.unread ? "mail-row unread" : "mail-row");
 
   const top = el("div", "row-top");
-  const from = el("span", "row-from", item.fromName || item.from);
-  const date = el("span", "row-date", fmtDate(item.date));
-  top.append(from, date);
+  top.append(el("span", "row-from", row.fromName || row.from), el("span", "row-date", fmtDate(row.date)));
 
-  const subj = el("div", "row-subject", item.subject);
-  const snip = el("div", "row-snippet", item.snippet);
+  const subj = el("div", "row-subject", row.subject);
+  const snip = el("div", "row-snippet", row.snippet);
 
   const quick = el("div", "row-actions");
   quick.append(
-    iconButton(item.unread ? "✉" : "✓", item.unread ? t("markRead") : t("markUnread"), () => void toggleRead(item)),
-    iconButton("🗑", t("trash"), () => void trashItem(item)),
+    iconButton(row.unread ? "✉" : "✓", row.unread ? t("markRead") : t("markUnread"), () => void toggleRead(row)),
+    iconButton("📦", t("archive"), () => void archiveRow(row)),
+    iconButton("🗑", t("trash"), () => void trashRow(row)),
   );
 
   const main = el("div", "row-main");
   main.append(top, subj, snip);
-  main.addEventListener("click", () => void openMessage(item.id));
+  main.addEventListener("click", () => void openMessage(row));
   li.append(main, quick);
   return li;
 }
@@ -385,39 +470,37 @@ function renderReader(): void {
   const wrap = el("div", "reader");
 
   const bar = el("div", "reader-bar");
-  const backBtn = iconButton("←", t("back"), () => {
-    S.selected = null;
-    S.body = null;
-    hideReader();
-  });
-  bar.append(backBtn);
+  bar.append(
+    iconButton("←", t("back"), () => {
+      closeReader();
+    }),
+  );
   if (S.selected) {
     bar.append(
       iconButton("✓", t("markUnread"), () => {
         const sel = S.selected;
-        if (sel) {
+        const acc = accountById(sel?.accountId);
+        if (sel && acc) {
           sel.unread = true;
-          void markRead(currentAccount()!, [sel.id], false).then(() => {
-            renderList();
+          void markRead(acc, [sel.id], false).then(() => {
+            renderSections();
             notifyBackground("refresh");
           });
         }
-        S.selected = null;
-        S.body = null;
-        hideReader();
+        closeReader();
       }),
-      iconButton("📦", t("archive"), () => void archiveSelected()),
+      iconButton("📦", t("archive"), () => {
+        if (S.selected) void archiveRow(S.selected);
+      }),
       iconButton("🗑", t("trash"), () => {
-        const sel = S.selected;
-        if (sel) void trashItem(sel);
+        if (S.selected) void trashRow(S.selected);
       }),
     );
   }
-  const openBtn = iconButton("↗", t("openInGmail"), () => {
-    const acc = currentAccount();
-    if (acc) window.open(gmailUrl(acc, `view=om`), "_blank");
-  });
-  bar.append(openBtn);
+  const acc = accountById(S.selectedAccountId);
+  if (acc) {
+    bar.append(iconButton("↗", t("openInGmail"), () => window.open(gmailUrl(acc, "view=om"), "_blank")));
+  }
   wrap.append(bar);
 
   if (S.loadingBody) {
@@ -453,8 +536,7 @@ function renderReader(): void {
     frame.srcdoc = S.body.html;
     frameBox.append(frame);
   } else {
-    const pre = el("pre", "mail-text", S.body.text ?? "");
-    frameBox.append(pre);
+    frameBox.append(el("pre", "mail-text", S.body.text ?? ""));
   }
   wrap.append(frameBox);
 

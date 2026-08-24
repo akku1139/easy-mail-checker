@@ -47,7 +47,8 @@ html, body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 14px;
 }
-body { width: 420px; height: 600px; overflow: hidden; }
+/* Wide popup: roughly 2x the classic 420px checker. */
+body { width: 860px; height: 640px; overflow: hidden; }
 
 .app {
   display: flex;
@@ -68,14 +69,35 @@ body { width: 420px; height: 600px; overflow: hidden; }
   border-bottom: 1px solid var(--border);
 }
 
-.account-select {
+.brand {
+  flex: 1;
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.side {
+  width: 64px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  overflow-y: auto;
+}
+
+.maincol {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--text);
 }
 
 .icon-btn {
@@ -123,6 +145,64 @@ body { width: 420px; height: 600px; overflow: hidden; }
 .reader-pane { display: none; }
 .app.reader-open .list-pane { display: none; }
 .app.reader-open .reader-pane { display: block; overflow-y: auto; }
+
+/* account rail (left) */
+.side-btn { position: relative; border: none; background: none; cursor: pointer; padding: 0; }
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  user-select: none;
+}
+.avatar.sm { width: 20px; height: 20px; font-size: 10px; }
+.side-btn:hover .avatar { box-shadow: 0 0 0 2px var(--emc-accent); }
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -8px;
+  background: #d93025;
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 14px;
+  min-width: 16px;
+  padding: 0 4px;
+  text-align: center;
+}
+
+/* per-account sections in the merged list */
+.acct-section { border-bottom: 1px solid var(--border); }
+.acct-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.acct-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acct-count {
+  margin-left: auto;
+  background: var(--hover);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.empty.slim, .error-box.slim { padding: 14px; }
 
 .mail-list { list-style: none; margin: 0; padding: 0; }
 
@@ -315,12 +395,26 @@ body.options-body {
 .account-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
+  justify-content: space-between;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
-.account-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-email {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+.account-email > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.order-controls { display: inline-flex; gap: 2px; flex: none; }
+.order-controls .icon-btn:disabled { opacity: 0.3; cursor: default; }
+.order-hint { color: var(--muted); font-size: 11px; flex: none; }
 .savebar { margin-top: 20px; display: flex; align-items: center; gap: 12px; }
 
 .builtin-status { margin: 0 0 12px; font-size: 13px; }

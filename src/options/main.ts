@@ -11,6 +11,13 @@ import type { Accent, ThemeMode } from "../shared/types";
 import { hasBuiltinClient, firefoxRedirectUrl } from "../background/oauth-config";
 import { BUILD_ID } from "../shared/env";
 
+/** Avatar hue consistent with the popup sidebar. */
+function hueFor(value: string): number {
+  let sum = 0;
+  for (const ch of value) sum = (sum + ch.charCodeAt(0) * 31) % 360;
+  return sum;
+}
+
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -101,20 +108,64 @@ async function boot(): Promise<void> {
 
   const accSection = el("section", "card");
   accSection.append(el("h2", undefined, t("accounts")));
-  if (accounts.length === 0) accSection.append(el("p", "muted", t("addAccount")));
-  for (const acc of accounts) {
-    const row = el("div", "account-row");
-    row.append(el("span", "account-email", acc.email));
-    const rm = el("button", "danger-btn", t("removeAccount"));
-    rm.type = "button";
-    rm.addEventListener("click", async () => {
-      await signOutAccount(acc.id);
-      await saveAccounts(accounts.filter((a) => a.id !== acc.id));
-      row.remove();
+
+  const listBox = el("div", "account-list");
+  accSection.append(listBox);
+
+  const renderAccountRows = (): void => {
+    listBox.replaceChildren();
+    accounts.forEach((acc, idx) => {
+      const row = el("div", "account-row");
+
+      const label = el("span", "account-email");
+      const avatar = el("span", "avatar sm");
+      avatar.style.background = `hsl(${hueFor(acc.email)} 55% 45%)`;
+      avatar.textContent = (acc.label || acc.email)[0]?.toUpperCase() ?? "?";
+      label.append(avatar, el("span", undefined, acc.email));
+      if (idx === 0) label.append(el("span", "order-hint", `· ${t("first")}`));
+
+      const controls = el("span", "order-controls");
+      const up = Object.assign(el("button"), { type: "button" }) as HTMLButtonElement;
+      up.textContent = "↑";
+      up.className = "icon-btn";
+      up.title = t("moveUp");
+      up.disabled = idx === 0;
+      up.addEventListener("click", () => move(idx, -1));
+      const down = Object.assign(el("button"), { type: "button" }) as HTMLButtonElement;
+      down.textContent = "↓";
+      down.className = "icon-btn";
+      down.title = t("moveDown");
+      down.disabled = idx === accounts.length - 1;
+      down.addEventListener("click", () => move(idx, 1));
+      controls.append(up, down);
+
+      const rm = el("button", "danger-btn", t("removeAccount"));
+      rm.type = "button";
+      rm.addEventListener("click", async () => {
+        await signOutAccount(acc.id);
+        accounts.splice(idx, 1);
+        await saveAccounts(accounts);
+        renderAccountRows();
+      });
+
+      row.append(label, controls, rm);
+      listBox.append(row);
     });
-    row.append(rm);
-    accSection.append(row);
-  }
+    if (accounts.length === 0) listBox.append(el("p", "muted", t("addAccount")));
+  };
+
+  /** Reorder locally and persist immediately (popup order follows on next open). */
+  const move = async (index: number, delta: number): Promise<void> => {
+    const target = index + delta;
+    if (target < 0 || target >= accounts.length) return;
+    const [item] = accounts.splice(index, 1);
+    if (!item) return;
+    accounts.splice(target, 0, item);
+    await saveAccounts(accounts);
+    renderAccountRows();
+  };
+
+  renderAccountRows();
 
   /* ------------------------------ oauth clients ---------------------------- */
 
