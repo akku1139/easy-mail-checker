@@ -40,6 +40,8 @@ export interface Settings {
   accent: Accent;
   pollSeconds: number;
   badgeEnabled: boolean;
+  /** When true, already-read messages are filtered out of the list. */
+  hideRead: boolean;
   pageSize: number;
   clients: Record<string, OAuthClient>;
   lastAccount: string | null;

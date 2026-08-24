@@ -20,6 +20,7 @@ const DICT = {
   moveUp: { ja: "上へ移動", en: "Move up" },
   moveDown: { ja: "下へ移動", en: "Move down" },
   first: { ja: "優先", en: "first" },
+  hideRead: { ja: "既読を非表示", en: "Hide read" },
   noBuiltinBuild: {
     ja: "このビルドには組み込みサインインがありません。設定ページからクライアントIDを入力してください。",
     en: "This build has no built-in sign-in. Enter your client ID in the options page.",

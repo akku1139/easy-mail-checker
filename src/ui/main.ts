@@ -206,7 +206,24 @@ function buildSkeleton(): void {
     unreadBtn.classList.toggle("active", S.unreadOnly);
     void loadAll();
   });
-  searchBar.append(input, unreadBtn);
+
+  // "Hide read" toggle — persisted so the choice survives popup restarts.
+  const hideReadLabel = el("label", "hide-read");
+  const hideReadInput = Object.assign(el("input"), { type: "checkbox" }) as HTMLInputElement;
+  hideReadInput.checked = S.settings?.hideRead ?? false;
+  S.unreadOnly = hideReadInput.checked;
+  hideReadInput.addEventListener("change", () => {
+    if (!S.settings) return;
+    S.settings.hideRead = hideReadInput.checked;
+    S.unreadOnly = hideReadInput.checked;
+    hideReadLabel.classList.toggle("on", hideReadInput.checked);
+    void saveSettings(S.settings);
+    void loadAll();
+  });
+  hideReadLabel.append(hideReadInput, el("span", undefined, t("hideRead")));
+  hideReadLabel.classList.toggle("on", hideReadInput.checked);
+
+  searchBar.append(input, unreadBtn, hideReadLabel);
 
   const side = el("nav", "side");
   const maincol = el("div", "maincol");

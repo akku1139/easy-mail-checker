@@ -328,6 +328,28 @@ body { width: 860px; height: 640px; overflow: hidden; }
   color: var(--text);
 }
 
+/* "Hide read" toggle in the search bar */
+.hide-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+  white-space: nowrap;
+}
+.hide-read:hover { background: var(--hover); }
+.hide-read.on {
+  border-color: var(--emc-accent);
+  color: var(--emc-accent);
+  background: color-mix(in srgb, var(--emc-accent) 12%, transparent);
+}
+.hide-read input { accent-color: var(--emc-accent); margin: 0; }
+
 .empty, .error-box {
   padding: 32px 16px;
   text-align: center;

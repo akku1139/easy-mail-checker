@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accent: "blue",
   pollSeconds: 60,
   badgeEnabled: true,
+  hideRead: false,
   pageSize: 25,
   clients: {},
   lastAccount: null,
