@@ -17,6 +17,7 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
 const common = {
   name: "easy-mail-checker",
   description: "Multi-account Gmail checker: read, mark read/unread and trash mail across accounts.",
+  homepage_url: "https://github.com/akku1139/easy-mail-checker",
 };
 
 /**

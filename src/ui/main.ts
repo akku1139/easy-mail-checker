@@ -328,6 +328,13 @@ function renderList(): void {
   }
   if (S.error && S.items.length === 0) {
     const box = el("div", "error-box", `${t("loadError")}: ${S.error}`);
+    // Scope/permission failures need a fresh interactive consent — offer it inline.
+    if (/403|insufficient|PERMISSION_DENIED/i.test(S.error)) {
+      const retry = el("button", "accent-btn big", t("reauthNeeded"));
+      retry.type = "button";
+      retry.addEventListener("click", () => void addAccount());
+      box.append(el("div"), retry);
+    }
     listPane.replaceChildren(box);
     return;
   }

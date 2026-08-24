@@ -107,6 +107,24 @@ Per-account client overrides remain available in the options page.
 Firefox's `identity.launchWebAuthFlow` cannot receive loopback redirects, hence
 the https `.extensions.allizom.org/` redirect URI above.
 
+#### Installing the unsigned MV2 zip in Firefox
+
+Firefox only loads unsigned add-ons permanently when signature enforcement is
+off. Pick one:
+
+- **Recommended — get it signed**: set the `AMO_JWT_ISSUER` / `AMO_JWT_SECRET`
+  secrets (free API keys from [addons.mozilla.org/developers](https://addons.mozilla.org/developers/addon/api/key/))
+  and cut a new release; the CI then ships an installable `.xpi`. Self-distributed
+  signed builds stay installable for their update-URL users without listing publicly.
+- **Try it out temporarily** (no settings change): `about:debugging#/runtime/this-firefox`
+  → *Load Temporary Add-on…* → pick any file inside the unzipped folder.
+  Temporary loads are removed when Firefox closes and get a per-install extension
+  ID (see the OAuth note above).
+- **Developer/Nightly/Esr-with-pref**: on Firefox Developer Edition or Nightly
+  set `xpinstall.signatures.required = false` in `about:config`, then
+  about:addons → gear → *Install Add-on From File…* works with the raw zip renamed to `.xpi`.
+  (Release/beta builds do not honor this pref.)
+
 ## Releasing
 
 Everything is automated from a tag; the only developer action is:

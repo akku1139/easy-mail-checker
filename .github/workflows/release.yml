@@ -88,13 +88,13 @@ jobs:
             exit 0
           fi
           rm -rf .amo-src && mkdir .amo-src
-          tar -xf easy-mail-checker-mv2.zip -C .amo-src
-          npx --yes web-ext-submit@latest \
+          unzip -q easy-mail-checker-mv2.zip -d .amo-src
+          npx --yes web-ext-submit@8.4.0 \
             --source-dir .amo-src \
-            --artifacts-dir . \
+            --artifacts-dir .amo-out \
             --api-key "$AMO_JWT_ISSUER" \
             --api-secret "$AMO_JWT_SECRET"
-          ls web-ext_artifacts/*.xpi && mv web-ext_artifacts/*.xpi easy-mail-checker-mv2-signed.xpi
+          mv .amo-out/*.xpi easy-mail-checker-mv2-signed.xpi
 
       - name: Collect artifacts
         run: |

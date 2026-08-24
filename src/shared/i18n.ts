@@ -59,8 +59,8 @@ const DICT = {
   authError: { ja: "認証エラー", en: "Auth error" },
   loadError: { ja: "読み込みエラー", en: "Failed to load" },
   reauthNeeded: {
-    ja: "再認証が必要です。アカウントを追加し直してください。",
-    en: "Re-authorization required. Please re-add the account.",
+    ja: "Googleで再ログインする",
+    en: "Sign in with Google again",
   },
 } as const;
 

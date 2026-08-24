@@ -170,6 +170,24 @@ interface TokenResponse {
   expires_in: number;
   refresh_token?: string;
   id_token?: string;
+  /** Space-separated granted scopes (present on token responses). */
+  scope?: string;
+}
+
+/** The scopes that must be present on every issued token. */
+const REQUIRED_SCOPES = ["https://mail.google.com/", "https://www.googleapis.com/auth/userinfo.email"];
+
+function assertScopesGranted(tokens: TokenResponse): void {
+  const granted = new Set((tokens.scope ?? "").split(/\s+/).filter(Boolean));
+  if (granted.size === 0) return; // endpoint did not echo scopes; let API calls surface problems
+  for (const needed of REQUIRED_SCOPES) {
+    if (!granted.has(needed)) {
+      throw new Error(
+        `Google did not grant the Gmail scope (granted: ${[...granted].join(" ") || "none"}). ` +
+          `Remove the app from https://myaccount.google.com/permissions and sign in again.`,
+      );
+    }
+  }
 }
 
 function toOutcome(tokens: TokenResponse, clientId: string): AuthOutcome {
@@ -189,7 +207,9 @@ async function tokenRequest(params: Record<string, string>): Promise<TokenRespon
     body: new URLSearchParams(params).toString(),
   });
   if (!res.ok) throw new Error(`token endpoint ${res.status}: ${await res.text()}`);
-  return (await res.json()) as TokenResponse;
+  const tokens = (await res.json()) as TokenResponse;
+  assertScopesGranted(tokens);
+  return tokens;
 }
 
 async function refreshAccessToken(state: AccountState): Promise<AccountState> {
