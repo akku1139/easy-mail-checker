@@ -41,10 +41,13 @@ for (const target of ["mv2", "mv3"]) {
   }
 }
 
-// zips exist and contain a manifest at their root
-for (const zipName of [`easy-mail-checker-mv2.zip`, `easy-mail-checker-mv3.zip`]) {
-  const p = resolve(root, zipName);
-  check(existsSync(p), `${zipName} built`);
+// zips exist when present in the workspace (release builds run pack.mjs first;
+// plain verify builds legitimately have none, so absence is not an error)
+const zips = [`easy-mail-checker-mv2.zip`, `easy-mail-checker-mv3.zip`];
+if (zips.some((z) => existsSync(resolve(root, z)))) {
+  for (const zipName of zips) {
+    check(existsSync(resolve(root, zipName)), `${zipName} built`);
+  }
 }
 
 // no accidental secrets in the shipped bundles
