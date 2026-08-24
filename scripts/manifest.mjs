@@ -2,11 +2,17 @@
  * Emits dist-mv2/manifest.json (Firefox MV2) and dist-mv3/manifest.json
  * (Chrome MV3) from one source of truth.
  */
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
-const version = "0.1.0";
+
+/** Single source of truth for the extension version: package.json. */
+const pkg = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
+const version = pkg.version;
+if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+  throw new Error(`Invalid semver in package.json: ${version}`);
+}
 
 const common = {
   name: "easy-mail-checker",
@@ -15,11 +21,12 @@ const common = {
 
 /**
  * Fixed extension IDs so ONE Google OAuth client serves every install:
- *  - Chrome: `key` pins the unpacked-extension ID (derived from the public key).
- *    Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
- *    then set the redirect URI https://<id>.chromiumapp.org/ in that client.
+ *  - Chrome: `key` field pins the extension ID. It is the RSA PUBLIC key
+ *    (SPKI/DER, base64) — generate with `node scripts/gen-ext-key.mjs`,
+ *    then set the redirect URI https://<derived-id>.chromiumapp.org/ on the
+ *    Google OAuth client.
  *  - Firefox: gecko.id is already fixed (see mv2 below).
- * Override at build time with EASY_MAIL_EXT_KEY if the key ever rotates.
+ * Supply via EASY_MAIL_EXT_KEY at build time (CI reads it from repo secrets).
  */
 const EXTENSION_KEY = process.env.EASY_MAIL_EXT_KEY ?? "";
 

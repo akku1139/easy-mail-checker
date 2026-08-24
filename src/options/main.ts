@@ -9,6 +9,7 @@ import { applyTheme, ACCENTS } from "../shared/theme";
 import { t } from "../shared/i18n";
 import type { Accent, ThemeMode } from "../shared/types";
 import { hasBuiltinClient, firefoxRedirectUrl } from "../background/oauth-config";
+import { BUILD_ID } from "../shared/env";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -141,6 +142,7 @@ async function boot(): Promise<void> {
   // Built-in client status: users of a signed release build need none of this.
   const builtinRow = el("p", "builtin-status");
   builtinRow.textContent = hasBuiltinClient() ? "✓ " + t("builtinClient") : "! " + t("noBuiltinClient");
+  if (BUILD_ID && BUILD_ID !== "dev") builtinRow.textContent += ` · ${BUILD_ID}`;
   builtinRow.classList.add(hasBuiltinClient() ? "ok" : "warn");
   clientSection.append(builtinRow);
 

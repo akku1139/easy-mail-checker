@@ -33,31 +33,68 @@ Google OAuth client baked in at build time, so the popup simply shows a
 The same client serves every install because the extension IDs are pinned:
 
 - **Firefox**: fixed `gecko.id` (`easy-mail-checker@example.com`) → the redirect
-  URI `https://<id>.extensions.allizom.org/` is identical for all users. AMO-signed
-  builds keep this ID; temporary loads get a per-install ID and need their own entry.
-- **Chrome**: the manifest's `key` field pins the unpacked/store ID → redirect
-  URI `https://<id>.chromiumapp.org/`. Generate a key once:
-  `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`,
-  build with `EASY_MAIL_EXT_KEY=...`, and register `https://<derived-id>.chromiumapp.org/`.
+  URI `https://easy-mail-checker@example.com.extensions.allizom.org/` is identical
+  for all users. AMO-signed builds keep this ID; temporary loads get a per-install
+  ID and need their own entry.
+- **Chrome**: the manifest's `key` field pins the extension ID → redirect URI
+  `https://<id>.chromiumapp.org/`. Generate the key once (see next section) and
+  register the derived redirect URI on your Google OAuth client.
 
 ### Release maintainer: one-time setup
+
+#### 1. Generate the Chrome extension key (local, one command)
+
+```bash
+node scripts/gen-ext-key.mjs
+```
+
+This prints:
+
+- `EASY_MAIL_EXT_KEY` — the **public** key (base64 SPKI). This is what goes into
+  GitHub secrets and then into manifest.json; it is safe to embed in builds.
+- The derived **Chrome extension ID** and its OAuth redirect URI — you will paste
+  this into Google Cloud Console.
+- A private key — store it in your password manager, never commit it. Building,
+  loading, and CI do not need it; it only lets you recover the same extension ID
+  if the secret is lost.
+
+Re-running the script creates a NEW identity. Generate once and reuse the value.
+
+#### 2. Create the Google OAuth client
 
 1. [Google Cloud Console](https://console.cloud.google.com/) → create/select a project.
 2. Enable the **Gmail API**.
 3. *OAuth consent screen*: External (or Internal for your org), add scope
-   `https://mail.google.com/` — a **restricted** scope; while unverified, only test users can sign in,
-   so publish the app or use Internal distribution.
-4. *Credentials → OAuth client ID*: one client with **both** redirect URIs:
-   - type *Web application* → `https://easy-mail-checker@example.com... .extensions.allizom.org/`
-     (exact value: what `browser.identity.getRedirectURL()` prints in the options page)
-   - type *Chrome Extension* → `https://<pinned-id>.chromiumapp.org/`
-5. Build the release:
+   `https://mail.google.com/` — a **restricted** scope; while unverified, only test users can sign
+   in, so publish the app or use Internal distribution.
+4. *Credentials → OAuth client ID*, type *Web application* with **both** redirect URIs:
+   - Firefox: `https://easy-mail-checker@example.com.extensions.allizom.org/`
+     (exact value also shown in the extension options page)
+   - Chrome: `https://<extension-id>.chromiumapp.org/` (from step 1)
+
+You get a **Client ID** (`….apps.googleusercontent.com`) and a **Client secret**
+(`GOCSPX-…`). Both are needed.
+
+#### 3. Put the values into GitHub repository secrets
+
+Repo → Settings → Secrets and variables → Actions → *New repository secret*:
+
+| Secret | Value |
+| --- | --- |
+| `EASY_MAIL_CLIENT_ID` | client ID from step 2 |
+| `EASY_MAIL_CLIENT_SECRET` | client secret from step 2 |
+| `EASY_MAIL_EXT_KEY` | public-key string printed by step 1 |
+
+Optional: `AMO_JWT_ISSUER` / `AMO_JWT_SECRET` from [addons.mozilla.org](https://addons.mozilla.org/developers/)
+(Settings → API keys) if you want the release CI to produce an AMO-signed `.xpi`.
+Without them the release ships an unsigned MV2 zip instead.
+
+That's it — releases are now fully automated (see "Releasing" below).
+
+#### Local builds without secrets
 
 ```bash
-EASY_MAIL_CLIENT_ID=xxxx.apps.googleusercontent.com \
-EASY_MAIL_CLIENT_SECRET=GOCSPX-...      # optional, needed for the Firefox flow without PKCE-only clients
-EASY_MAIL_EXT_KEY=<base64 key>          # optional, pins Chrome extension id
-pnpm zip
+pnpm zip   # or: EASY_MAIL_* set for a real sign-in build
 ```
 
 Builds without these env vars still compile, but print a loud warning and fall
@@ -69,6 +106,27 @@ Per-account client overrides remain available in the options page.
 
 Firefox's `identity.launchWebAuthFlow` cannot receive loopback redirects, hence
 the https `.extensions.allizom.org/` redirect URI above.
+
+## Releasing
+
+Everything is automated from a tag; the only developer action is:
+
+```bash
+pnpm version patch        # or minor / major — bumps package.json, tags vX.Y.Z
+git push --follow-tags
+```
+
+The [release workflow](.github/workflows/release.yml) then:
+
+1. verifies the tag matches `package.json` (they cannot drift),
+2. builds both targets with the baked-in OAuth client and pinned extension key,
+3. runs artifact consistency checks (`scripts/ci-check.mjs`),
+4. optionally signs the Firefox add-on via AMO (if AMO secrets are set),
+5. publishes a GitHub Release with `easy-mail-checker-mv3.zip`,
+   `easy-mail-checker-mv2.zip` and — when AMO secrets exist — a signed `.xpi`.
+
+Pushes to `main` and PRs run a lighter [verify workflow](.github/workflows/verify.yml)
+(typecheck + build + checks) without publishing anything.
 
 ## Architecture
 

@@ -1,0 +1,143 @@
+name: Release
+
+# Developer flow:
+#   pnpm version patch        # bumps package.json + creates annotated tag vX.Y.Z
+#   git push --follow-tags    # everything below happens automatically
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   EASY_MAIL_CLIENT_ID       Google OAuth client ID baked into the build
+#   EASY_MAIL_CLIENT_SECRET   Google OAuth client secret (Firefox token exchange)
+#   EASY_MAIL_EXT_KEY         RSA PUBLIC key (SPKI base64) pinning the Chrome ID.
+#                             Generate with: node scripts/gen-ext-key.mjs
+# Optional secrets:
+#   AMO_JWT_ISSUER / AMO_JWT_SECRET  Firefox Add-on signing (else unsigned zip ships)
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for release notes
+
+      - name: Install pnpm
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check required release secrets
+        env:
+          EASY_MAIL_CLIENT_ID: ${{ secrets.EASY_MAIL_CLIENT_ID }}
+          EASY_MAIL_CLIENT_SECRET: ${{ secrets.EASY_MAIL_CLIENT_SECRET }}
+          EASY_MAIL_EXT_KEY: ${{ secrets.EASY_MAIL_EXT_KEY }}
+        run: |
+          missing=0
+          for v in EASY_MAIL_CLIENT_ID EASY_MAIL_CLIENT_SECRET EASY_MAIL_EXT_KEY; do
+            if [ -z "${!v:-}" ]; then echo "::error::Missing repository secret: $v"; missing=1; fi
+          done
+          exit $missing
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG="v$(node -p "require('./package.json').version")"
+          if [ "$PKG" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($PKG)."
+            echo "::error::Use 'pnpm version <patch|minor|major>' so they stay in sync."
+            exit 1
+          fi
+          echo "Releasing $GITHUB_REF_NAME"
+
+      - name: Build both targets
+        env:
+          EASY_MAIL_CLIENT_ID: ${{ secrets.EASY_MAIL_CLIENT_ID }}
+          EASY_MAIL_CLIENT_SECRET: ${{ secrets.EASY_MAIL_CLIENT_SECRET }}
+          EASY_MAIL_EXT_KEY: ${{ secrets.EASY_MAIL_EXT_KEY }}
+          EASY_MAIL_BUILD: ${{ github.ref_name }}
+        run: |
+          pnpm build
+          node scripts/pack.mjs
+          node scripts/ci-check.mjs
+
+      - name: Verify built-in OAuth client is present
+        run: |
+          grep -l "apps.googleusercontent.com" dist-mv2/auth.js dist-mv3/auth.js \
+            || { echo "::error::Built-in client missing from bundles"; exit 1; }
+
+      - name: Sign Firefox add-on via AMO (best effort)
+        id: amo
+        env:
+          AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+          AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        continue-on-error: true
+        run: |
+          if [ -z "$AMO_JWT_ISSUER" ] || [ -z "$AMO_JWT_SECRET" ]; then
+            echo "::warning::AMO credentials not set — shipping unsigned MV2 zip."
+            exit 0
+          fi
+          rm -rf .amo-src && mkdir .amo-src
+          tar -xf easy-mail-checker-mv2.zip -C .amo-src
+          npx --yes web-ext-submit@latest \
+            --source-dir .amo-src \
+            --artifacts-dir . \
+            --api-key "$AMO_JWT_ISSUER" \
+            --api-secret "$AMO_JWT_SECRET"
+          ls web-ext_artifacts/*.xpi && mv web-ext_artifacts/*.xpi easy-mail-checker-mv2-signed.xpi
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp easy-mail-checker-mv3.zip easy-mail-checker-mv2.zip release-artifacts/
+          [ -f easy-mail-checker-mv2-signed.xpi ] && cp easy-mail-checker-mv2-signed.xpi release-artifacts/
+          ls -la release-artifacts/
+
+      - name: Generate release notes
+        run: |
+          PREV="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          if [ -n "$PREV" ]; then
+            CHANGES="$(git log --format='- %s (%h)' "$PREV..$GITHUB_REF_NAME")"
+          else
+            # first release: everything since the initial commit
+            CHANGES="$(git log --format='- %s (%h)' | grep -v 'Initial commit' || true)"
+          fi
+          {
+            echo "## easy-mail-checker ${GITHUB_REF_NAME}"
+            echo
+            echo "**Sign in with Google on first open — no setup needed.**"
+            echo
+            echo "| File | For |"
+            echo "| --- | --- |"
+            echo "| \`easy-mail-checker-mv3.zip\` | Chrome / Edge / Brave |"
+            echo "| \`easy-mail-checker-mv2.zip\` | Firefox (unsigned) |"
+            [ -f release-artifacts/easy-mail-checker-mv2-signed.xpi ] && \
+              echo "| \`easy-mail-checker-mv2-signed.xpi\` | Firefox (AMO-signed) |"
+            echo
+            echo "### Install"
+            echo
+            echo "- **Chrome**: unzip → chrome://extensions → Developer mode → Load unpacked"
+            echo "- **Firefox (.xpi)**: about:addons → gear → Install Add-on From File"
+            echo "- **Firefox (unsigned zip)**: about:debugging → Load Temporary Add-on"
+            echo
+            echo "### Changes"
+            echo
+            printf '%s\n' "$CHANGES"
+          } > RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: RELEASE_NOTES.md
+          files: release-artifacts/*
+          fail_on_unmatched_files: true
