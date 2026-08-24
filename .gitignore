@@ -1,0 +1,10 @@
+node_modules/
+dist-*/
+*.zip
+*.crx
+*.pem
+.DS_Store
+*.log
+.env
+# generated icons (run: pnpm icons)
+assets/icons/

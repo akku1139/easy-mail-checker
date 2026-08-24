@@ -1,0 +1,21 @@
+{
+  "name": "easy-mail-checker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Multi-account Gmail checker browser extension (Firefox MV2 / Chrome MV3)",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "icons": "node scripts/icons.mjs",
+    "build": "pnpm typecheck && vite build --mode mv3-pages && vite build --mode mv3-bg && vite build --mode mv2-pages && vite build --mode mv2-bg && node scripts/manifest.mjs",
+    "zip": "pnpm build && node scripts/pack.mjs",
+    "clean": "node scripts/clean.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chrome": "^0.2.7",
+    "@types/firefox-webext-browser": "^143.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2"
+  }
+}
