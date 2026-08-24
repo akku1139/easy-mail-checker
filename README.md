@@ -33,9 +33,9 @@ Google OAuth client baked in at build time, so the popup simply shows a
 The same client serves every install because the extension IDs are pinned:
 
 - **Firefox**: fixed `gecko.id` (`easy-mail-checker@example.com`) → the redirect
-  URI `https://easy-mail-checker@example.com.extensions.allizom.org/` is identical
-  for all users. AMO-signed builds keep this ID; temporary loads get a per-install
-  ID and need their own entry.
+  URI is the loopback form `http://127.0.0.1/mozoauth2/<subdomain>`, identical for
+  all users (Firefox ≥ 86; Google rejects the `*.extensions.allizom.org` dummy
+  domain because it cannot be ownership-verified).
 - **Chrome**: the manifest's `key` field pins the extension ID → redirect URI
   `https://<id>.chromiumapp.org/`. Generate the key once (see next section) and
   register the derived redirect URI on your Google OAuth client.
@@ -68,8 +68,8 @@ Re-running the script creates a NEW identity. Generate once and reuse the value.
    `https://mail.google.com/` — a **restricted** scope; while unverified, only test users can sign
    in, so publish the app or use Internal distribution.
 4. *Credentials → OAuth client ID*, type *Web application* with **both** redirect URIs:
-   - Firefox: `https://easy-mail-checker@example.com.extensions.allizom.org/`
-     (exact value also shown in the extension options page)
+- Firefox: `http://127.0.0.1/mozoauth2/easy-mail-checker_example_com`
+  (exact value also shown in the extension options page)
    - Chrome: `https://<extension-id>.chromiumapp.org/` (from step 1)
 
 You get a **Client ID** (`….apps.googleusercontent.com`) and a **Client secret**
@@ -104,8 +104,10 @@ Per-account client overrides remain available in the options page.
 
 ### Firefox note
 
-Firefox's `identity.launchWebAuthFlow` cannot receive loopback redirects, hence
-the https `.extensions.allizom.org/` redirect URI above.
+Since Firefox 86, `identity.launchWebAuthFlow` accepts loopback redirects of the
+form `http://127.0.0.1/mozoauth2/<subdomain>` (RFC 8252 §7.3) — this is what makes
+the Google-compatible redirect above possible. The subdomain must match the one
+derived from the add-on ID (`makeWidgetId`: lowercase, `[^a-z0-9_-]` → `_`).
 
 #### Installing the unsigned MV2 zip in Firefox
 

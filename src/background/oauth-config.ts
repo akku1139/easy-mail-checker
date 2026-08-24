@@ -27,12 +27,15 @@ export function hasBuiltinClient(): boolean {
  * stable across installs — one redirect URI registration serves all users.
  */
 export async function firefoxRedirectUrl(): Promise<string> {
-  if (IS_FIREFOX) {
-    const native = (globalThis as any).browser?.identity?.getRedirectURL?.();
-    if (typeof native === "function") return String(native());
-  }
-  // Non-Firefox context (e.g. type-checking): mirror the fixed gecko id.
-  return "https://easy-mail-checker@example.com.extensions.allizom.org/";
+  // Google rejects the *.extensions.allizom.org dummy domain (it cannot be
+  // domain-verified). MDN's documented alternative for Firefox >= 86 is a
+  // loopback redirect: http://127.0.0.1/mozoauth2/<subdomain of getRedirectURL()>
+  const native = IS_FIREFOX ? (globalThis as any).browser?.identity?.getRedirectURL?.() : undefined;
+  const subdomain =
+    typeof native === "string" && native
+      ? (native.replace(/^https?:\/\//, "").split(".")[0] ?? "")
+      : "easy-mail-checker_example_com"; // makeWidgetId("easy-mail-checker@example.com")
+  return `http://127.0.0.1/mozoauth2/${subdomain}`;
 }
 
 /** Resolve which OAuth client an account uses (per-account override or default). */
