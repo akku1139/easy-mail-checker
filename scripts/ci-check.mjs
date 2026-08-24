@@ -50,7 +50,10 @@ if (zips.some((z) => existsSync(resolve(root, z)))) {
   }
 }
 
-// no accidental secrets in the shipped bundles
+// The OAuth client secret is intentionally embedded in release builds (the
+// documented Google setup uses a Web-application client, which requires it at
+// the token endpoint). What we must never leak is the LOCAL DEV values — so
+// this only guards against a dev .env leaking into bundles.
 const { execFileSync } = await import("node:child_process");
 function grep(dir, pattern) {
   try {
@@ -61,8 +64,21 @@ function grep(dir, pattern) {
     return [];
   }
 }
-const hits = [...grep(resolve(root, "dist-mv2"), "GOCSPX-"), ...grep(resolve(root, "dist-mv3"), "GOCSPX-")];
-check(hits.length === 0, "no client secrets leaked into bundles");
+if (process.env.EASY_MAIL_CLIENT_SECRET) {
+  // In CI both are the same value, so instead assert the secret is present
+  // (build correctness), which also proves define-injection worked.
+  const hits = [
+    ...grep(resolve(root, "dist-mv2"), "GOCSPX-"),
+    ...grep(resolve(root, "dist-mv3"), "GOCSPX-"),
+  ];
+  check(hits.length === 2, "baked-in client secret present in both targets");
+} else {
+  const hits = [
+    ...grep(resolve(root, "dist-mv2"), "GOCSPX-"),
+    ...grep(resolve(root, "dist-mv3"), "GOCSPX-"),
+  ];
+  check(hits.length === 0, "no client secrets leaked into bundles");
+}
 
 if (failed) process.exit(1);
 console.log("\nAll CI checks passed.");

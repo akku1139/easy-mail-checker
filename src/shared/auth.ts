@@ -60,7 +60,7 @@ export async function startInteractiveAuth(hint?: string): Promise<AccountConfig
         redirectUrl: client.redirectUrl ?? (await firefoxRedirectUrl()),
         loginHint: hint,
       })
-    : await chromeFlow({ clientId: client.clientId, loginHint: hint });
+    : await chromeFlow({ clientId: client.clientId, clientSecret: client.clientSecret, loginHint: hint });
 
   const email = result.email ?? hint ?? "(unknown)";
   const accounts = await loadAccounts();
@@ -88,7 +88,11 @@ interface AuthOutcome {
 
 /* ------------------------------ Chrome MV3 ------------------------------ */
 
-async function chromeFlow(opts: { clientId: string; loginHint?: string }): Promise<AuthOutcome> {
+async function chromeFlow(opts: {
+  clientId: string;
+  clientSecret?: string;
+  loginHint?: string;
+}): Promise<AuthOutcome> {
   const details: chrome.identity.WebAuthFlowDetails = {
     url:
       `${OAUTH_AUTH}?response_type=code` +
@@ -110,6 +114,7 @@ async function chromeFlow(opts: { clientId: string; loginHint?: string }): Promi
   if (!code) throw new Error("no authorization code");
   const tokens = await tokenRequest({
     client_id: opts.clientId,
+    ...(opts.clientSecret ? { client_secret: opts.clientSecret } : {}),
     code,
     redirect_uri: chrome.identity.getRedirectURL(),
     grant_type: "authorization_code",
@@ -155,7 +160,7 @@ async function firefoxFlow(opts: {
     grant_type: "authorization_code",
     code_verifier: pkce.verifier,
   });
-  return toOutcome(tokens, opts.clientId, opts.clientSecret);
+  return toOutcome(tokens, opts.clientId);
 }
 
 /* -------------------------------- shared -------------------------------- */
@@ -167,13 +172,12 @@ interface TokenResponse {
   id_token?: string;
 }
 
-function toOutcome(tokens: TokenResponse, clientId: string, clientSecret?: string): AuthOutcome {
+function toOutcome(tokens: TokenResponse, clientId: string): AuthOutcome {
   return {
     email: extractEmailFromIdToken(tokens.id_token),
     secret: {
       refreshToken: tokens.refresh_token,
       clientId,
-      clientSecret,
     },
   };
 }

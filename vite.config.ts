@@ -40,8 +40,11 @@ export default defineConfig(({ mode }) => {
     define: {
       __TARGET__: JSON.stringify(family(mode) === "mv2" ? "firefox" : "chrome"),
       __BUILD__: JSON.stringify(process.env.EASY_MAIL_BUILD ?? "dev"),
-      // Expose the optional baked-in OAuth client ID (no VITE_ prefix needed).
+      // Baked-in OAuth client (no VITE_ prefix needed). The secret is required
+      // because the documented setup uses a "Web application"-type Google
+      // client, whose token endpoint demands client_secret.
       "import.meta.env.EASY_MAIL_CLIENT_ID": JSON.stringify(process.env.EASY_MAIL_CLIENT_ID ?? ""),
+      "import.meta.env.EASY_MAIL_CLIENT_SECRET": JSON.stringify(process.env.EASY_MAIL_CLIENT_SECRET ?? ""),
     },
     plugins: [
       {

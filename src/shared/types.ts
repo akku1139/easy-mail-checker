@@ -21,8 +21,8 @@ export interface AccountConfig {
 /** Persisted per-account auth material. */
 export interface AccountSecret {
   refreshToken?: string;
+  /** Per-account client override (BYO-client users); empty for built-in clients. */
   clientId?: string;
-  clientSecret?: string;
 }
 
 export interface AccountState {
