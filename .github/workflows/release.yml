@@ -89,7 +89,7 @@ jobs:
           fi
           rm -rf .amo-src && mkdir .amo-src
           unzip -q easy-mail-checker-mv2.zip -d .amo-src
-          npx --yes web-ext-submit@8.4.0 \
+          npx --yes web-ext-submit@7.8.0 \
             --source-dir .amo-src \
             --artifacts-dir .amo-out \
             --api-key "$AMO_JWT_ISSUER" \
