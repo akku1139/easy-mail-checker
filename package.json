@@ -7,7 +7,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "icons": "node scripts/icons.mjs",
-    "build": "pnpm typecheck && vite build --mode mv3-pages && vite build --mode mv3-bg && vite build --mode mv2-pages && vite build --mode mv2-bg && node scripts/manifest.mjs",
+    "build": "pnpm typecheck && node scripts/icons.mjs && vite build --mode mv3-pages && vite build --mode mv3-bg && vite build --mode mv2-pages && vite build --mode mv2-bg && node scripts/manifest.mjs",
     "zip": "pnpm build && node scripts/pack.mjs",
     "clean": "node scripts/clean.mjs"
   },
