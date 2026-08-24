@@ -61,7 +61,7 @@ const mv2 = {
   background: { scripts: ["background.js"], persistent: false },
   options_ui: { page: "options.html", open_in_tab: true },
   browser_specific_settings: {
-    gecko: { id: "easy-mail-checker@example.com", strict_min_version: "78.0" },
+    gecko: { id: "easy-mail-checker@example.com", strict_min_version: "86.0" },
   },
 };
 

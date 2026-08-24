@@ -26,16 +26,21 @@ export function hasBuiltinClient(): boolean {
  * add-on's signed ID, so a fixed gecko id (see scripts/manifest.mjs) keeps it
  * stable across installs — one redirect URI registration serves all users.
  */
+/**
+ * Firefox redirect URL.
+ *
+ * Google rejects the `*.extensions.allizom.org` dummy domain (not ownership-
+ * verifiable), so we use the loopback form Firefox has allowed since v86
+ * (bug 1635344, RFC 8252 §7.3). Firefox accepts exactly:
+ *
+ *   http://127.0.0.1/mozoauth2/<sha1-hex of the extension ID>
+ *
+ * (see toolkit/components/extensions/child/ext-identity.js — computeHash is
+ * SHA-1 hex of extension.id; verified against a live error message).
+ */
 export async function firefoxRedirectUrl(): Promise<string> {
-  // Google rejects the *.extensions.allizom.org dummy domain (it cannot be
-  // domain-verified). MDN's documented alternative for Firefox >= 86 is a
-  // loopback redirect: http://127.0.0.1/mozoauth2/<subdomain of getRedirectURL()>
-  const native = IS_FIREFOX ? (globalThis as any).browser?.identity?.getRedirectURL?.() : undefined;
-  const subdomain =
-    typeof native === "string" && native
-      ? (native.replace(/^https?:\/\//, "").split(".")[0] ?? "")
-      : "easy-mail-checker_example_com"; // makeWidgetId("easy-mail-checker@example.com")
-  return `http://127.0.0.1/mozoauth2/${subdomain}`;
+  const SUBDOMAIN = "bf61fff5f07affccd95ddad06e4ed35d7a3e57c4"; // sha1(gecko id)
+  return `http://127.0.0.1/mozoauth2/${SUBDOMAIN}`;
 }
 
 /** Resolve which OAuth client an account uses (per-account override or default). */
