@@ -13,6 +13,20 @@ const common = {
   description: "Multi-account Gmail checker: read, mark read/unread and trash mail across accounts.",
 };
 
+/**
+ * Fixed extension IDs so ONE Google OAuth client serves every install:
+ *  - Chrome: `key` pins the unpacked-extension ID (derived from the public key).
+ *    Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+ *    then set the redirect URI https://<id>.chromiumapp.org/ in that client.
+ *  - Firefox: gecko.id is already fixed (see mv2 below).
+ * Override at build time with EASY_MAIL_EXT_KEY if the key ever rotates.
+ */
+const EXTENSION_KEY = process.env.EASY_MAIL_EXT_KEY ?? "";
+
+function chromeKeyField() {
+  return EXTENSION_KEY ? { key: EXTENSION_KEY } : {};
+}
+
 const icons = {
   "16": "icons/16.png",
   "32": "icons/32.png",
@@ -46,6 +60,7 @@ const mv2 = {
 const mv3 = {
   manifest_version: 3,
   ...common,
+  ...chromeKeyField(),
   version,
   icons,
   minimum_chrome_version: "96",
@@ -69,3 +84,14 @@ writeFileSync(resolve(root, "dist-mv2/manifest.json"), JSON.stringify(mv2, null,
 writeFileSync(resolve(root, "dist-mv3/manifest.json"), JSON.stringify(mv3, null, 2) + "\n");
 
 console.log("manifests written: dist-mv2/manifest.json, dist-mv3/manifest.json");
+
+// Release check: a build without a built-in OAuth client still works, but
+// users would have to supply their own client ID — warn loudly.
+if (!process.env.EASY_MAIL_CLIENT_ID) {
+  console.warn(
+    "\n[easy-mail-checker] WARNING: EASY_MAIL_CLIENT_ID is not set.\n" +
+      "  This build has NO built-in Google sign-in; users must enter their own\n" +
+      "  OAuth client ID in the options page. For one-click sign-in builds:\n" +
+      "    EASY_MAIL_CLIENT_ID=xxxx.apps.googleusercontent.com pnpm build\n",
+  );
+}

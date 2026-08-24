@@ -4,11 +4,11 @@ import {
   dropCachedState,
   getCachedState,
   loadAccounts,
-  loadSettings,
 } from "./storage";
 import { loadSecret, persistSecret, removeSecret, saveSecret } from "./secrets";
 import { saveAccounts, setCachedState } from "./storage";
-import { DEFAULT_CLIENT_ID } from "../background/oauth-config";
+import { clientFor, firefoxRedirectUrl } from "../background/oauth-config";
+import { t } from "./i18n";
 
 const OAUTH_AUTH = "https://accounts.google.com/o/oauth2/v2/auth";
 const OAUTH_TOKEN = "https://oauth2.googleapis.com/token";
@@ -47,35 +47,20 @@ function extractEmailFromIdToken(idToken?: string): string | undefined {
   }
 }
 
-/** Resolve which OAuth client an account uses (per-account override or default). */
-export async function clientFor(account?: AccountConfig): Promise<{
-  clientId: string;
-  clientSecret?: string;
-  redirectUrl?: string;
-}> {
-  const settings = await loadSettings();
-  const key = account?.id ?? "__default__";
-  const custom = settings.clients[key];
-  return {
-    clientId: custom?.clientId ?? DEFAULT_CLIENT_ID,
-    clientSecret: custom?.clientSecret,
-    redirectUrl: IS_FIREFOX ? custom?.redirectUrl : undefined,
-  };
-}
-
 export async function startInteractiveAuth(hint?: string): Promise<AccountConfig> {
-  const settings = await loadSettings();
-  const custom = settings.clients["__default__"];
-  const clientId = custom?.clientId ?? DEFAULT_CLIENT_ID;
-  if (!clientId) {
-    throw new Error(
-      "No OAuth client ID configured. Open the options page and set your Google Cloud OAuth client ID first.",
-    );
+  const client = await clientFor("__default__");
+  if (!client.clientId) {
+    throw new Error(t("noBuiltinBuild"));
   }
 
   const result = IS_FIREFOX
-    ? await firefoxFlow({ clientId, clientSecret: custom?.clientSecret, redirectUrl: custom?.redirectUrl, loginHint: hint })
-    : await chromeFlow({ clientId, loginHint: hint });
+    ? await firefoxFlow({
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
+        redirectUrl: client.redirectUrl ?? (await firefoxRedirectUrl()),
+        loginHint: hint,
+      })
+    : await chromeFlow({ clientId: client.clientId, loginHint: hint });
 
   const email = result.email ?? hint ?? "(unknown)";
   const accounts = await loadAccounts();
@@ -206,11 +191,9 @@ async function tokenRequest(params: Record<string, string>): Promise<TokenRespon
 async function refreshAccessToken(state: AccountState): Promise<AccountState> {
   const account = (await loadAccounts()).find((a) => a.id === state.accountId);
   if (!account) throw new Error("account missing");
-  const client = await clientFor(account);
+  const client = await clientFor(account.id);
   if (!client.clientId) {
-    throw new Error(
-      "No OAuth client ID configured. Set it in the options page or rebuild with EASY_MAIL_CLIENT_ID.",
-    );
+    throw new Error(t("noBuiltinBuild"));
   }
   const secret = await loadSecret(account.id);
   if (!secret.refreshToken) throw new Error("no refresh token — re-add the account");

@@ -25,29 +25,50 @@ Load unpacked:
 - **Chrome**: `chrome://extensions` → Developer mode → "Load unpacked" → `dist-mv3/`
 - **Firefox**: `about:debugging#/runtime/this-firefox` → "Load Temporary Add-on…" → any file in `dist-mv2/`
 
-## OAuth setup (required once)
+## Sign-in experience
 
-The extension talks to the Gmail REST API directly, so it needs OAuth credentials.
-You can use your own client — nothing is sent anywhere else.
+**End users never touch Google Cloud Console.** The extension ships with a
+Google OAuth client baked in at build time, so the popup simply shows a
+**"Sign in with Google"** button on first run — click it, consent, done.
+The same client serves every install because the extension IDs are pinned:
+
+- **Firefox**: fixed `gecko.id` (`easy-mail-checker@example.com`) → the redirect
+  URI `https://<id>.extensions.allizom.org/` is identical for all users. AMO-signed
+  builds keep this ID; temporary loads get a per-install ID and need their own entry.
+- **Chrome**: the manifest's `key` field pins the unpacked/store ID → redirect
+  URI `https://<id>.chromiumapp.org/`. Generate a key once:
+  `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`,
+  build with `EASY_MAIL_EXT_KEY=...`, and register `https://<derived-id>.chromiumapp.org/`.
+
+### Release maintainer: one-time setup
 
 1. [Google Cloud Console](https://console.cloud.google.com/) → create/select a project.
 2. Enable the **Gmail API**.
-3. *APIs & Services → OAuth consent screen*: Internal or Testing, add scope
-   `https://mail.google.com/` (restricted scope — add yourself as a test user while unverified).
-4. *Credentials → Create credentials → OAuth client ID*:
-   - **Chrome (MV3)**: type *Chrome Extension*, paste your extension ID shown at `chrome://extensions`.
-   - **Firefox (MV2)**: type *Web application*,
-     redirect URI = `https://<your-extension-id>.extensions.allizom.org/`
-     (the exact value is what `browser.identity.getRedirectURL()` returns).
-5. Enter the **Client ID** in the extension options page ("OAuth clients" section),
-   or bake it in at build time: `EASY_MAIL_CLIENT_ID=xxxxx pnpm build`.
+3. *OAuth consent screen*: External (or Internal for your org), add scope
+   `https://mail.google.com/` — a **restricted** scope; while unverified, only test users can sign in,
+   so publish the app or use Internal distribution.
+4. *Credentials → OAuth client ID*: one client with **both** redirect URIs:
+   - type *Web application* → `https://easy-mail-checker@example.com... .extensions.allizom.org/`
+     (exact value: what `browser.identity.getRedirectURL()` prints in the options page)
+   - type *Chrome Extension* → `https://<pinned-id>.chromiumapp.org/`
+5. Build the release:
 
-Per-account overrides are supported via the options page.
+```bash
+EASY_MAIL_CLIENT_ID=xxxx.apps.googleusercontent.com \
+EASY_MAIL_CLIENT_SECRET=GOCSPX-...      # optional, needed for the Firefox flow without PKCE-only clients
+EASY_MAIL_EXT_KEY=<base64 key>          # optional, pins Chrome extension id
+pnpm zip
+```
+
+Builds without these env vars still compile, but print a loud warning and fall
+back to BYO-client mode (users enter their own client ID in the options page).
+
+Per-account client overrides remain available in the options page.
 
 ### Firefox note
 
-Firefox's `identity.launchWebAuthFlow` cannot receive loopback redirects, so the
-Web-application redirect URI above is used; it is stored per-account in the options page.
+Firefox's `identity.launchWebAuthFlow` cannot receive loopback redirects, hence
+the https `.extensions.allizom.org/` redirect URI above.
 
 ## Architecture
 

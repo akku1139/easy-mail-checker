@@ -1,5 +1,26 @@
 /** Tiny i18n dictionary. UI language follows the browser, ja/en supported. */
 const DICT = {
+  signInWithGoogle: { ja: "Google でサインイン", en: "Sign in with Google" },
+  tagline: {
+    ja: "複数のGmailアカウントをまとめてチェック。既読・削除もここから。",
+    en: "Check multiple Gmail accounts at once. Read, mark and trash from here.",
+  },
+  authInProgress: { ja: "サインイン中…", en: "Signing in…" },
+  openSettings: { ja: "設定を開く", en: "Open settings" },
+  builtinClient: {
+    ja: "組み込みのGoogleサインインが有効です。設定は不要です。",
+    en: "Built-in Google sign-in is active. No setup needed.",
+  },
+  noBuiltinClient: {
+    ja: "このビルドには組み込みサインインがありません。下段に自分のOAuthクライアントIDを入力してください。",
+    en: "This build has no built-in sign-in. Enter your own OAuth client ID below.",
+  },
+  copy: { ja: "コピー", en: "Copy" },
+  copied: { ja: "コピーしました", en: "Copied" },
+  noBuiltinBuild: {
+    ja: "このビルドには組み込みサインインがありません。設定ページからクライアントIDを入力してください。",
+    en: "This build has no built-in sign-in. Enter your client ID in the options page.",
+  },
   addAccount: { ja: "アカウントを追加", en: "Add account" },
   settings: { ja: "設定", en: "Settings" },
   refresh: { ja: "更新", en: "Refresh" },

@@ -175,6 +175,11 @@ function currentAccount(): AccountConfig | null {
 /* ------------------------------ data actions ------------------------------ */
 
 async function addAccount(): Promise<void> {
+  const btn = document.querySelector(".onboard .accent-btn") as HTMLButtonElement | null;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = t("authInProgress");
+  }
   try {
     const account = await startInteractiveAuth();
     if (!S.accounts.some((a) => a.id === account.id)) S.accounts.push(account);
@@ -182,6 +187,10 @@ async function addAccount(): Promise<void> {
     await switchAccount(account.id);
   } catch (e) {
     showError(`${t("authError")}: ${e instanceof Error ? e.message : String(e)}`);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t("signInWithGoogle");
+    }
   }
 }
 
@@ -298,10 +307,17 @@ function showError(message: string): void {
 }
 
 function renderNoAccounts(): void {
-  const box = el("div", "empty");
+  const box = el("div", "onboard");
+  box.append(el("div", "onboard-logo", "✉"));
+  box.append(el("h1", "onboard-title", "easy-mail-checker"));
+  box.append(el("p", "muted tagline", t("tagline")));
   const btn = el("button", "accent-btn big", t("addAccount"));
+  btn.textContent = t("signInWithGoogle");
   btn.addEventListener("click", () => void addAccount());
-  box.append(el("p", "muted", "→ Gmail"), btn);
+  const gear = el("button", "link-btn", t("openSettings"));
+  gear.type = "button";
+  gear.addEventListener("click", () => api.runtime.openOptionsPage());
+  box.append(btn, gear);
   listPane.replaceChildren(box);
 }
 

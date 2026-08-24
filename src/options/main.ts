@@ -8,6 +8,7 @@ import { signOutAccount } from "../shared/auth";
 import { applyTheme, ACCENTS } from "../shared/theme";
 import { t } from "../shared/i18n";
 import type { Accent, ThemeMode } from "../shared/types";
+import { hasBuiltinClient, firefoxRedirectUrl } from "../background/oauth-config";
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -136,6 +137,34 @@ async function boot(): Promise<void> {
   };
 
   const def = settings.clients["__default__"] ?? {};
+
+  // Built-in client status: users of a signed release build need none of this.
+  const builtinRow = el("p", "builtin-status");
+  builtinRow.textContent = hasBuiltinClient() ? "✓ " + t("builtinClient") : "! " + t("noBuiltinClient");
+  builtinRow.classList.add(hasBuiltinClient() ? "ok" : "warn");
+  clientSection.append(builtinRow);
+
+  // Firefox-only: show the redirect URL to register in the OAuth client.
+  if (api.runtime.getManifest().manifest_version === 2) {
+    const redirect = def.redirectUrl ?? (await firefoxRedirectUrl());
+    const redirectWrap = el("div", "field");
+    redirectWrap.append(el("span", undefined, t("redirectUrl")));
+    const redirectBox = el("div", "redirect-row");
+    const redirectInput = Object.assign(el("input"), { type: "text" }) as HTMLInputElement;
+    redirectInput.readOnly = true;
+    redirectInput.value = redirect;
+    const copyBtn = el("button", "accent-btn", t("copy"));
+    copyBtn.type = "button";
+    copyBtn.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(redirectInput.value);
+      copyBtn.textContent = t("copied");
+      window.setTimeout(() => (copyBtn.textContent = t("copy")), 1200);
+    });
+    redirectBox.append(redirectInput, copyBtn);
+    redirectWrap.append(redirectBox);
+    clientSection.append(redirectWrap);
+  }
+
   clientSection.append(
     mkField(t("clientId"), def.clientId ?? "", (v) => {
       settings.clients["__default__"] = { ...def, clientId: v || undefined };
