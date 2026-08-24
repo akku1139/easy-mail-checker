@@ -98,6 +98,13 @@ body { width: 860px; height: 640px; overflow: hidden; }
 .maincol {
   flex: 1;
   min-width: 0;
+  /* Contain scrolling inside the panes: without this the list overflows the
+     fixed-height popup and scrollIntoView moves the whole page (rail included),
+     while wheel input does nothing because ancestors are overflow:hidden. */
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .icon-btn {
@@ -141,7 +148,28 @@ body { width: 860px; height: 640px; overflow: hidden; }
   min-height: 0;
 }
 
-.list-pane { display: block; overflow-y: auto; }
+.list-pane {
+  display: block;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.reader-pane {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.list-pane::-webkit-scrollbar,
+.reader-pane::-webkit-scrollbar { width: 10px; }
+.list-pane::-webkit-scrollbar-thumb,
+.reader-pane::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 5px;
+}
+.list-pane::-webkit-scrollbar-thumb:hover,
+.reader-pane::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.list-pane::-webkit-scrollbar-track,
+.reader-pane::-webkit-scrollbar-track { background: transparent; }
 .reader-pane { display: none; }
 .app.reader-open .list-pane { display: none; }
 .app.reader-open .reader-pane { display: block; overflow-y: auto; }
@@ -230,6 +258,10 @@ body { width: 860px; height: 640px; overflow: hidden; }
 .mail-row.unread .row-from,
 .mail-row.unread .row-subject { font-weight: 700; }
 
+/* Reserve room for the action cluster so rows never resize/reflow on hover. */
+.row-subject,
+.row-snippet { padding-right: 128px; }
+
 .row-main { flex: 1; min-width: 0; }
 .row-top { display: flex; justify-content: space-between; gap: 8px; }
 .row-from {
@@ -254,13 +286,38 @@ body { width: 860px; height: 640px; overflow: hidden; }
 }
 
 .row-actions {
-  display: none;
-  flex-direction: column;
-  gap: 2px;
+  /* Overlay pinned to the top-right corner; taken out of flow entirely and
+     faded with opacity/visibility so showing it cannot shift row metrics. */
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease;
 }
 .mail-row:hover .row-actions,
-.mail-row:focus-within .row-actions { display: flex; }
-.row-actions .icon-btn { width: 26px; height: 26px; font-size: 13px; }
+.mail-row:focus-within .row-actions {
+  opacity: 1;
+  visibility: visible;
+}
+/* The date occupies this corner when idle; hiding it is layout-inert. */
+.mail-row:hover .row-date { visibility: hidden; }
+.row-actions .icon-btn {
+  width: 36px;
+  height: 30px;
+  font-size: 17px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.row-actions .icon-btn:hover {
+  border-color: var(--emc-accent);
+  color: var(--emc-accent);
+  background: var(--hover);
+}
 
 .searchbar .search-input {
   flex: 1;

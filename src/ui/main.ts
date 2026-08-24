@@ -241,9 +241,15 @@ function renderSidebar(): void {
     btn.append(avatar);
     const n = unreadTotal(account.id);
     if (n && n > 0) btn.append(el("span", "badge", n > 99 ? "99+" : String(n)));
-    btn.addEventListener("click", () =>
-      document.querySelector(`[data-acct="${account.id}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    );
+    btn.addEventListener("click", () => {
+      document
+        .querySelector(`[data-acct="${account.id}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      // scrollIntoView can also nudge ancestor scrollers; snap them back so only
+      // .list-pane moves — the rail must never scroll with the content.
+      const maincol = document.querySelector(".maincol");
+      if (maincol) requestAnimationFrame(() => (maincol.scrollTop = 0));
+    });
     side.append(btn);
   }
 }
